@@ -1,0 +1,3 @@
+0:achat_materiel
+10:realisation_produit
+40:livraison
