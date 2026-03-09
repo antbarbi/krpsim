@@ -178,7 +178,10 @@ def calculate_chain_efficiency(
             if res not in downstream.inputs or downstream.name in visited:
                 continue
             needed = downstream.inputs[res]
-            ratio = qty / needed  # how many times we feed the downstream process
+            # Normalize by total inputs consumed: a process that needs 2 apples
+            # to produce 1 juice is half as efficient per apple as one needing 1.
+            total_inputs = sum(process.inputs.values()) if process.inputs else 1
+            ratio = (qty / needed) / total_inputs  # target units per input unit
             ds_eff = calculate_chain_efficiency(
                 downstream, all_processes, optimize_targets, visited
             )

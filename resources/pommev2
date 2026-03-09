@@ -1,6 +1,6 @@
 seed:12
 harvest:(seed:1):(apple:2):10
-apple_sale:(apple:1):(euro:1):35
+apple_sale:(apple:1):(euro:1):50
 apple_to_juice:(apple:2):(juice:1):15
 juice_sale:(juice:1):(euro:2):10
 optimize:(time;euro)
