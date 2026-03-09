@@ -125,42 +125,81 @@ def parse_configuration(filename: str) -> Configuration:
     return config
 
 
+def find_dependencies(process: Process, all_processes: Dict[str, Process]) -> List[str]:
+    """Return processes reachable from this process's outputs (BFS over consumers)."""
+    deps: List[str] = []
+    visited = set()
+    queue: List[Process] = [process]
+    while queue:
+        current = queue.pop(0)
+        for produced in current.outputs.keys():
+            for candidate in all_processes.values():
+                if candidate.name in visited:
+                    continue
+                if produced in candidate.inputs:
+                    visited.add(candidate.name)
+                    deps.append(candidate.name)
+                    queue.append(candidate)
+    return deps
+
+
 def calculate_process_score(process: Process, stocks: Dict[str, int], 
-                           optimize_targets: List[str]) -> float:
-    """
-    Calculate a priority score for a process based on optimization targets.
-    Higher score = higher priority.
-    """
+                           optimize_targets: List[str],
+                           all_processes: Dict[str, Process],
+                           pending_outputs: Dict[str, int]) -> float:
+    """Score a process: favor producing (or enabling) optimize targets."""
     score = 0.0
     
-    # Check if process outputs any optimization target
+    # Strong bonus for directly producing a target
     for target in optimize_targets:
         if target == 'time':
-            # For time optimization, prefer shorter processes
+            # For time, shorter delay is better
             score += 1000.0 / (process.delay + 1)
         elif target in process.outputs:
-            # This process produces an optimization target
-            score += 100.0 * process.outputs[target]
+            score += 10000.0 * process.outputs[target]
+    # Heavy penalty for consuming a target resource so optimizer prefers
+    # leaving target stock untouched instead of immediately using/selling it.
+    for target in optimize_targets:
+        if target in process.inputs:
+            score -= 10000.0 * process.inputs[target]
     
-    # Bonus for processes that can be executed immediately
-    if process.can_execute(stocks):
-        score += 50.0
+    # Medium bonus if this process unlocks another process that produces a target
+    deps = find_dependencies(process, all_processes)
+    for dep_name in deps:
+        dep_proc = all_processes.get(dep_name)
+        if not dep_proc:
+            continue
+        for target in optimize_targets:
+            if target != 'time' and target in dep_proc.outputs:
+                score += 500.0 * dep_proc.outputs[target]
     
-    # Consider process efficiency (output/delay ratio)
+    # Bonus for contributing to inputs of a target-producing process (deficit aware)
+    target_input_deficits: Dict[str, int] = defaultdict(int)
+    for target in optimize_targets:
+        if target == 'time':
+            continue
+        for producer in all_processes.values():
+            if target not in producer.outputs:
+                continue
+            for res, qty in producer.inputs.items():
+                available = stocks.get(res, 0) + pending_outputs.get(res, 0)
+                deficit = max(qty - available, 0)
+                if deficit > target_input_deficits.get(res, 0):
+                    target_input_deficits[res] = deficit
+    for res, qty in process.outputs.items():
+        if res in target_input_deficits:
+            cover = min(qty, target_input_deficits[res])
+            score += 2000.0 * cover
+
+    # Efficiency bonus: more output per time
     total_output = sum(process.outputs.values())
-    score += total_output / (process.delay + 1)
+    score += total_output / max(1, process.delay)
+    
+    # Tiny bonus if immediately runnable
+    if process.can_execute(stocks):
+        score += 0.1
     
     return score
-
-
-def find_dependencies(process: Process, all_processes: Dict[str, Process]) -> List[str]:
-    """Find processes that produce resources needed by this process."""
-    dependencies = []
-    for resource in process.inputs:
-        for p in all_processes.values():
-            if resource in p.outputs:
-                dependencies.append(p.name)
-    return dependencies
 
 
 def simulate(config: Configuration, max_delay: float) -> List[Tuple[int, str]]:
@@ -209,14 +248,31 @@ def simulate(config: Configuration, max_delay: float) -> List[Tuple[int, str]]:
             started_any = False
             
             # Score and sort processes
+            pending_outputs = defaultdict(int)
+            for scheduled in running_processes:
+                for res, qty in scheduled.process.outputs.items():
+                    pending_outputs[res] += qty
+
             executable = []
             for process in processes.values():
                 if process.can_execute(stocks):
-                    score = calculate_process_score(process, stocks, optimize_targets)
+                    score = calculate_process_score(
+                        process, stocks, optimize_targets, processes, pending_outputs
+                    )
                     executable.append((score, process))
             
             # Sort by score (highest first)
             executable.sort(key=lambda x: -x[0])
+            # if the best-scoring process does not have a positive score,
+            # there's no benefit to running anything further; stop trying.
+            if not executable or executable[0][0] <= 0:
+                # if there are no currently running processes, nothing
+                # will ever change from this point on, so we can exit the
+                # entire simulation and avoid artificially incrementing
+                # `current_cycle` during idle iterations.
+                if not running_processes:
+                    return trace, stocks, current_cycle
+                break
             
             # Try to start the best process
             for score, process in executable:
@@ -277,6 +333,9 @@ def display_results(trace: List[Tuple[int, str]], final_stocks: Dict[str, int],
     print("=" * 60)
     print("KRPSIM - Simulation Results")
     print("=" * 60)
+    resource_opt_targets = [t for t in config.optimize if t != 'time']
+    header_opt_count = len(resource_opt_targets)
+    print(f"{len(config.processes)} processes, {len(config.stocks)} stocks, {header_opt_count} to optimize")
     print()
     
     print("Initial stocks:")
@@ -309,6 +368,8 @@ def display_results(trace: List[Tuple[int, str]], final_stocks: Dict[str, int],
             qty = final_stocks.get(target, 0)
             initial = config.stocks.get(target, 0)
             print(f"  {target}: {initial} -> {qty} (+{qty - initial})")
+    if not config.optimize:
+        print("  (none)")
     print("=" * 60)
 
 
