@@ -143,62 +143,82 @@ def find_dependencies(process: Process, all_processes: Dict[str, Process]) -> Li
     return deps
 
 
-def calculate_process_score(process: Process, stocks: Dict[str, int], 
+def calculate_chain_efficiency(
+    process: Process,
+    all_processes: Dict[str, Process],
+    optimize_targets: List[str],
+    visited: frozenset = frozenset()
+) -> Dict[str, float]:
+    """
+    For each non-time optimize target, return the best achievable
+    target_units/cycle ratio for a chain starting at this process.
+
+    Example: apple_to_juice (delay=15) -> juice_sale (delay=10, euro:2)
+      chain_eff[euro] = 1 * (2/10) * 10/(15+10) = 0.08
+    vs apple_sale (delay=35, euro:1)
+      chain_eff[euro] = 1/35 ≈ 0.029
+    """
+    if process.name in visited:
+        return {}
+
+    visited = visited | frozenset([process.name])
+    non_time_targets = [t for t in optimize_targets if t != 'time']
+    result: Dict[str, float] = defaultdict(float)
+
+    for res, qty in process.outputs.items():
+        # Direct production of a target resource
+        for target in non_time_targets:
+            if res == target:
+                eff = qty / max(1, process.delay)
+                if eff > result[target]:
+                    result[target] = eff
+
+        # Chain through downstream processes that consume this resource
+        for downstream in all_processes.values():
+            if res not in downstream.inputs or downstream.name in visited:
+                continue
+            needed = downstream.inputs[res]
+            ratio = qty / needed  # how many times we feed the downstream process
+            ds_eff = calculate_chain_efficiency(
+                downstream, all_processes, optimize_targets, visited
+            )
+            for target, eff in ds_eff.items():
+                # Amortise our delay into the chain:
+                #   chain_eff = ratio * downstream_eff * (downstream_delay / total_delay)
+                chain_eff = ratio * eff * downstream.delay / (process.delay + downstream.delay)
+                if chain_eff > result[target]:
+                    result[target] = chain_eff
+
+    return dict(result)
+
+
+def calculate_process_score(process: Process, stocks: Dict[str, int],
                            optimize_targets: List[str],
                            all_processes: Dict[str, Process],
                            pending_outputs: Dict[str, int]) -> float:
-    """Score a process: favor producing (or enabling) optimize targets."""
-    score = 0.0
-    
-    # Strong bonus for directly producing a target
-    for target in optimize_targets:
-        if target == 'time':
-            # For time, shorter delay is better
-            score += 1000.0 / (process.delay + 1)
-        elif target in process.outputs:
-            score += 10000.0 * process.outputs[target]
-    # Heavy penalty for consuming a target resource so optimizer prefers
-    # leaving target stock untouched instead of immediately using/selling it.
-    for target in optimize_targets:
-        if target in process.inputs:
-            score -= 10000.0 * process.inputs[target]
-    
-    # Medium bonus if this process unlocks another process that produces a target
-    deps = find_dependencies(process, all_processes)
-    for dep_name in deps:
-        dep_proc = all_processes.get(dep_name)
-        if not dep_proc:
-            continue
-        for target in optimize_targets:
-            if target != 'time' and target in dep_proc.outputs:
-                score += 500.0 * dep_proc.outputs[target]
-    
-    # Bonus for contributing to inputs of a target-producing process (deficit aware)
-    target_input_deficits: Dict[str, int] = defaultdict(int)
-    for target in optimize_targets:
-        if target == 'time':
-            continue
-        for producer in all_processes.values():
-            if target not in producer.outputs:
-                continue
-            for res, qty in producer.inputs.items():
-                available = stocks.get(res, 0) + pending_outputs.get(res, 0)
-                deficit = max(qty - available, 0)
-                if deficit > target_input_deficits.get(res, 0):
-                    target_input_deficits[res] = deficit
-    for res, qty in process.outputs.items():
-        if res in target_input_deficits:
-            cover = min(qty, target_input_deficits[res])
-            score += 2000.0 * cover
+    """
+    Score a process using full chain efficiency towards optimize targets.
 
-    # Efficiency bonus: more output per time
-    total_output = sum(process.outputs.values())
-    score += total_output / max(1, process.delay)
-    
-    # Tiny bonus if immediately runnable
+    For each target the scorer computes the best target_units/cycle ratio
+    achievable by this process including all downstream chains, then scales
+    it by 10 000 so the values remain comparable to the time heuristic.
+    """
+    score = 0.0
+
+    # Time optimisation: reward shorter delays
+    if 'time' in optimize_targets:
+        score += 1000.0 / (process.delay + 1)
+
+    # Resource optimisation: use chain efficiency so indirect paths that
+    # deliver more target units per combined cycle beat direct slow paths
+    chain_eff = calculate_chain_efficiency(process, all_processes, optimize_targets)
+    for target, eff in chain_eff.items():
+        score += 10000.0 * eff
+
+    # Tiny bonus if immediately runnable (tie-break)
     if process.can_execute(stocks):
         score += 0.1
-    
+
     return score
 
 
