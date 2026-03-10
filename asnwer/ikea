@@ -1,0 +1,10 @@
+python3 -m krpsim examples/ikea 10 -v
+
+
+# No more process doable at cyle 51
+# Stock :
+#  planche => 0
+#  montant => 0
+#  fond => 0
+#  etagere => 0
+#  armoire => 1

@@ -1,0 +1,7 @@
+python3 -m krpsim examples/recre 10 -v
+
+# No more process doable at cyle 71585551
+# Stock :
+#  bonbon => 3
+#  moi => 1
+#  marelle => 477238

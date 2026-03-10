@@ -1,0 +1,21 @@
+python3 -m krpsim examples/pomme 10 -v
+
+
+# No more process doable at cyle 1103668
+# Stock :
+#  four => 10
+#  euro => 4020700
+#  pomme => 219600
+#  citron => 0
+#  oeuf => 0
+#  farine => 600
+#  beurre => 13588
+#  lait => 1102854
+#  jaune_oeuf => 4
+#  blanc_oeuf => 142638
+#  pate_sablee => 492400
+#  pate_feuilletee => 143400
+#  tarte_citron => 0
+#  tarte_pomme => 20
+#  flan => 0
+#  boite => 30
