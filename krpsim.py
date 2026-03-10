@@ -218,6 +218,13 @@ def calculate_process_score(process: Process, stocks: Dict[str, int],
     for target, eff in chain_eff.items():
         score += 10000.0 * eff
 
+    # Heavy penalty for consuming a target resource directly.
+    # Without this, processes that eat the target (e.g. apple_sale when
+    # optimizing apple) score 0 and still run due to the runnable bonus.
+    for target in optimize_targets:
+        if target != 'time' and target in process.inputs:
+            score -= 50000.0 * process.inputs[target]
+
     # Tiny bonus if immediately runnable (tie-break)
     if process.can_execute(stocks):
         score += 0.1
