@@ -1,0 +1,11 @@
+python3 -m krpsim examples/inception 10 -v
+
+# No more process doable at cyle 241
+# Stock :
+#  clock => 0
+#  second => 0
+#  minute => 0
+#  hour => 0
+#  day => 0
+#  year => 0
+#  dream => 2

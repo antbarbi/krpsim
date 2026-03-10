@@ -1,0 +1,9 @@
+python3 -m krpsim examples/steak 10 -v
+
+
+# No more process doable at cyle 41
+# Stock :
+#  steak_cru => 0
+#  poele => 1
+#  steak_mi_cuit => 0
+#  steak_cuit => 3
