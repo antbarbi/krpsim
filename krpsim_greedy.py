@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
-"""
-krpsim_greedy - CLI wrapper for krpsim beam-greedy planner.
-"""
-
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Dict, List, Sequence
 
 from srcs.krpsim_parser import Configuration, parse_configuration
@@ -42,6 +38,12 @@ def infer_targets_from_config(config: Configuration) -> tuple[List[str], bool]:
 
 def action_trace_lines(actions: Sequence[Action]) -> List[str]:
     return [f"{a.cycle}:{a.process_name}" for a in actions]
+
+
+def write_trace_file(config_file: str, trace_lines: Sequence[str]) -> Path:
+    output_path = Path(f"{Path(config_file).stem}_asnwer.log")
+    output_path.write_text("\n".join(trace_lines) + ("\n" if trace_lines else ""), encoding="utf-8")
+    return output_path
 
 
 def print_summary(target_resources: Sequence[str], optimize_time: bool, initial_stocks: Dict[str, int], result: GreedyResult) -> None:
@@ -121,13 +123,8 @@ def main() -> int:
     print_summary(target_resources, optimize_time, config.stocks, result)
 
     trace_lines = action_trace_lines(result.actions)
-
-    if trace_lines:
-        print("Trace (cycle:process):")
-        for line in trace_lines:
-            print(line)
-    else:
-        print("Trace (cycle:process):")
+    trace_output = write_trace_file(args.config_file, trace_lines)
+    print(f"Trace written to: {trace_output}")
 
     if optimize_time and not target_resources:
         # Time-only objective is considered successful when we complete naturally
