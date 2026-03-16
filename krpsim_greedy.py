@@ -65,6 +65,11 @@ def print_summary(target_resources: Sequence[str], optimize_time: bool, initial_
     print(f"Process starts in plan: {result.starts}")
     print(f"Beam width: {result.beam_width}")
 
+    print("Final stocks:")
+    all_resources = set(initial_stocks.keys()) | set(result.final_stocks.keys())
+    for name in sorted(all_resources):
+        print(f"  {name}: {result.final_stocks.get(name, 0)}")
+
     if optimize_time and not target_resources:
         if result.timed_out:
             print("Result: stopped by timeout")
@@ -127,8 +132,6 @@ def main() -> int:
     print(f"Trace written to: {trace_output}")
 
     if optimize_time and not target_resources:
-        # Time-only objective is considered successful when we complete naturally
-        # before timeout/limits.
         return 0 if not result.timed_out and not result.stopped_by_limits else 2
 
     return 0 if result.reached else 2
