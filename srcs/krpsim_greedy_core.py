@@ -226,17 +226,19 @@ class GreedyPlanner:
     @staticmethod
     def _adaptive_beam_width(delay_seconds: float) -> int:
         """Choose beam width automatically from the given delay budget."""
-        if delay_seconds <= 0:
-            return 16
-        if delay_seconds < 0.25:
+        if delay_seconds < 1:
+            return 2
+        if delay_seconds < 5:
             return 4
-        if delay_seconds < 1.0:
+        if delay_seconds < 10:
             return 8
-        if delay_seconds < 3.0:
+        if delay_seconds < 20:
             return 12
-        if delay_seconds < 8.0:
+        if delay_seconds < 30:
             return 16
-        return 24
+        if delay_seconds < 60:
+            return 32
+        return 64
 
     def _better_state(self, candidate: BeamState, current: BeamState) -> bool:
         return self._state_score(candidate) > self._state_score(current)
