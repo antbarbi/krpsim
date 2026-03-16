@@ -300,15 +300,25 @@ class GreedyPlanner:
         stopped_by_limits = False
 
         started_at = time.perf_counter()
+        deadline = (started_at + delay_seconds) if delay_seconds > 0 else None
+
+        def is_timed_out() -> bool:
+            return deadline is not None and time.perf_counter() >= deadline
 
         while frontier:
-            if delay_seconds > 0 and (time.perf_counter() - started_at) >= delay_seconds:
+            if is_timed_out():
                 timed_out = True
                 break
 
             candidates: List[BeamState] = []
+            expansion_timed_out = False
 
             for state in frontier:
+                if is_timed_out():
+                    timed_out = True
+                    expansion_timed_out = True
+                    break
+
                 if state.cycle > max_cycle or state.starts >= max_starts:
                     stopped_by_limits = True
                     continue
@@ -323,20 +333,23 @@ class GreedyPlanner:
 
                 if executable:
                     for process in executable:
+                        if is_timed_out():
+                            timed_out = True
+                            expansion_timed_out = True
+                            break
+
                         next_stocks = dict(stocks)
                         next_running = list(running)
                         next_actions = list(actions)
 
-                        repeat_count = self._max_repetitions(process, next_stocks)
-                        for _ in range(repeat_count):
-                            process.consume_inputs(next_stocks)
-                            next_running.append(
-                                RunningProc(
-                                    end_cycle=cycle + process.delay,
-                                    process_name=process.name,
-                                )
+                        process.consume_inputs(next_stocks)
+                        next_running.append(
+                            RunningProc(
+                                end_cycle=cycle + process.delay,
+                                process_name=process.name,
                             )
-                            next_actions.append(Action(cycle=cycle, process_name=process.name))
+                        )
+                        next_actions.append(Action(cycle=cycle, process_name=process.name))
 
                         candidates.append(
                             BeamState(
@@ -344,9 +357,12 @@ class GreedyPlanner:
                                 stocks=next_stocks,
                                 running=next_running,
                                 actions=next_actions,
-                                starts=state.starts + repeat_count,
+                                starts=state.starts + 1,
                             )
                         )
+
+                    if expansion_timed_out:
+                        break
 
                 # If no process is executable, advance to next completion cycle.
                 if not executable and running:
@@ -370,6 +386,9 @@ class GreedyPlanner:
                             starts=state.starts,
                         )
                     )
+
+            if expansion_timed_out:
+                break
 
             if not candidates:
                 break
